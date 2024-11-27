@@ -1,13 +1,8 @@
 import { Box, IconButton, List, ListItem, ListItemText, TextField, Typography } from '@mui/material'
 import styles from './ChatWidget.module.scss'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import SendIcon from '@mui/icons-material/Send'
-import { io } from 'socket.io-client'
 import { v4 as uuidv4 } from "uuid"
-
-const socket = io('ws://localhost:8080/assistant', {
-  transports: ["websocket"],
-})
 
 type Message = {
   type: "message";
@@ -19,34 +14,52 @@ export function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>([])
   const [value, setValue] = useState<string>('')
   const sessionIdKey = "session_id"
+  const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     const storedSessionId = localStorage.getItem(sessionIdKey);
     const sessionId = storedSessionId || uuidv4();
     if (!storedSessionId) localStorage.setItem(sessionIdKey, sessionId)
 
-    socket.on("connect_error", (error) => {
-      console.error("WebSocket connection error:", error);
-    })
-    socket.emit("message", {
-      method: "start_session",
-      params: sessionId,
-    })
-    socket.emit("message", { method: "get_messages" })
-    socket.on("message", (data: { messages?: Message[]; update?: Message }) => {
+    socketRef.current = new WebSocket('ws://localhost:8081/assistant');
+
+    socketRef.current.onopen = () => {
+      console.log("WebSocket connection established");
+      socketRef.current?.send(JSON.stringify({
+        method: "start_session",
+        params: { session_id: sessionId },
+      }));
+      socketRef.current?.send(JSON.stringify({ method: "get_messages" }));
+    };
+
+    socketRef.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
       if (data.messages) {
         // Если пришла история
         setMessages(data.messages);
       } else if (data.update) {
         // Если пришло новое сообщение
-        setMessages((prev) => [...prev, data.update!]);
+        assistantMessage : Message = {
+          type: "message",
+          from: "assistant",
+          text: data.update!,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
       }
-    });
+    };
+
+    socketRef.current.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    socketRef.current.onclose = () => {
+      console.log("WebSocket connection closed");
+    };
 
     return () => {
-      socket.disconnect()
+      socketRef.current?.close();
     }
-  }, [])
+  }, []);
 
   const handleSendMessage = () => {
     if (!value.trim()) return;
@@ -57,18 +70,20 @@ export function ChatWidget() {
       text: value.trim(),
     };
 
-    // Отправляем сообщение на сервер
-    socket.emit("message", {
-      method: "send_message",
-      params: { text: value },
-    });
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      // Отправляем сообщение на сервер
+      socketRef.current.send(JSON.stringify({
+        method: "send_message",
+        params: { text: value },
+      }));
 
-    // Добавляем сообщение пользователя локально
-    setMessages((prev) => [...prev, newMessage]);
-    setValue("");
+//       // Добавляем сообщение пользователя локально
+//       setMessages((prev) => [...prev, newMessage]);
+      setValue("");
+    } else {
+      console.error("WebSocket connection is not open");
+    }
   };
-
-  console.log(messages)
 
   return (
     <div className={styles.widget}>
@@ -106,38 +121,39 @@ export function ChatWidget() {
           </Box>
 
           <List
-          sx={{
-            flex: 1,
-            overflowY: "auto",
-            padding: 2,
-            backgroundColor: "#FFFFFF",
-          }}
-        >
-          {messages.map((message, index) => (
-            <ListItem
-              key={index}
-              sx={{
-                justifyContent:
-                  message.from === "assistant" ? "flex-start" : "flex-end",
-              }}
-            >
-              <Box
+            sx={{
+              flex: 1,
+              overflowY: "auto",
+              padding: 2,
+              backgroundColor: "#FFFFFF",
+            }}
+          >
+            {messages.map((message, index) => (
+              <ListItem
+                key={index}
                 sx={{
-                  maxWidth: "70%",
-                  padding: 1,
-                  borderRadius: 1,
-                  backgroundColor:
-                    message.from === "assistant" ? "#E8EAF6" : "#BBDEFB",
+                  justifyContent:
+                    message.from === "assistant" ? "flex-start" : "flex-end",
+                  alignItems: "flex-start",
                 }}
               >
-                <Typography variant="caption">
-                  {message.from === "assistant" ? "Ассистент" : "Вы"}
-                </Typography>
-                <ListItemText primary={message.text} />
-              </Box>
-            </ListItem>
-          ))}
-        </List>
+                <Box
+                  sx={{
+                    maxWidth: "70%",
+                    padding: 1,
+                    borderRadius: 1,
+                    backgroundColor:
+                      message.from === "assistant" ? "#E8EAF6" : "#BBDEFB",
+                  }}
+                >
+                  <Typography variant="caption">
+                    {message.from === "assistant" ? "Ассистент" : "Вы"}
+                  </Typography>
+                  <ListItemText primary={message.text} />
+                </Box>
+              </ListItem>
+            ))}
+          </List>
 
           <Box
             sx={{

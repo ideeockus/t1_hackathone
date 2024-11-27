@@ -21,14 +21,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-API_KEY = os.environ.get('OPENAI_KEY')
-if API_KEY is None:
-    raise Exception('API_KEY not configured')
-
 openai_aclient = AsyncOpenAI(
-    api_key='',
-    base_url='https://openrouter.ai/api/v1',
-    http_client=httpx.AsyncClient(proxy='socks5://localhost:8077'),
+    api_key="",
+    base_url="https://openrouter.ai/api/v1",
+
+    # api_key="",
+    # base_url="https://d.dgx:8001/v1",
+
+    # http_client=httpx.AsyncClient(proxy='socks5://localhost:8077'),
 )
 
 
@@ -72,6 +72,7 @@ async def get_gpt_response(messages: list[Message]) -> str:
     try:
         response_big = await openai_aclient.chat.completions.create(
             model="gpt-3.5-turbo",
+            # model="/model",
             messages=[
                 {"role": "system", "content": "Ты база знаний магазина цветов"},
                 *convert_messages_to_openai_format(messages),
@@ -93,6 +94,7 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_json()
 
+            print(data)
             if data["method"] == "start_session":
                 session_id = data["params"].get("session_id") or str(uuid.uuid4())
                 sessions[session_id] = websocket
