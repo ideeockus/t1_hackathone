@@ -1,0 +1,13 @@
+*,
+*:before,
+*:after {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  font-size: 14px;
+  font-weight: 500;
+  font-family: 'Roboto';
+}
